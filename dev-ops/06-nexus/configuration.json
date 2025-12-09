@@ -1,0 +1,233 @@
+{
+  "repositories": {
+    "docker": {
+      "hosted": {
+        "name": "multivendor-docker-hosted",
+        "online": true,
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "allow_once"
+        },
+        "docker": {
+          "v1Enabled": false,
+          "forceBasicAuth": true,
+          "httpPort": 8082,
+          "httpsPort": 8083
+        }
+      },
+      "proxy": {
+        "name": "docker-hub-proxy",
+        "online": true,
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "proxy": {
+          "remoteUrl": "https://registry-1.docker.io",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "docker": {
+          "v1Enabled": false,
+          "forceBasicAuth": true,
+          "httpPort": null,
+          "httpsPort": null
+        },
+        "negativeCache": {
+          "enabled": true,
+          "timeToLive": 1440
+        },
+        "httpClient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "retries": 0,
+            "userAgentSuffix": "string",
+            "timeout": 60,
+            "enableCircularRedirects": false,
+            "enableCookies": false
+          },
+          "authentication": {
+            "type": "username",
+            "username": "anonymous",
+            "password": "anonymous",
+            "ntlmHost": "string",
+            "ntlmDomain": "string"
+          }
+        }
+      },
+      "group": {
+        "name": "multivendor-docker-group",
+        "online": true,
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "group": {
+          "memberNames": ["multivendor-docker-hosted", "docker-hub-proxy"]
+        },
+        "docker": {
+          "v1Enabled": false,
+          "forceBasicAuth": true,
+          "httpPort": null,
+          "httpsPort": null
+        }
+      }
+    },
+    "npm": {
+      "hosted": {
+        "name": "multivendor-npm-hosted",
+        "online": true,
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "allow_once"
+        },
+        "cleanup": {
+          "policyNames": []
+        }
+      },
+      "proxy": {
+        "name": "npmjs-proxy",
+        "online": true,
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "cleanup": {
+          "policyNames": []
+        },
+        "proxy": {
+          "remoteUrl": "https://registry.npmjs.org",
+          "contentMaxAge": 1440,
+          "metadataMaxAge": 1440
+        },
+        "negativeCache": {
+          "enabled": true,
+          "timeToLive": 1440
+        },
+        "httpClient": {
+          "blocked": false,
+          "autoBlock": true,
+          "connection": {
+            "retries": 0,
+            "userAgentSuffix": "string",
+            "timeout": 60,
+            "enableCircularRedirects": false,
+            "enableCookies": false
+          },
+          "authentication": {
+            "type": "username",
+            "username": "anonymous",
+            "password": "anonymous",
+            "ntlmHost": "string",
+            "ntlmDomain": "string"
+          }
+        }
+      },
+      "group": {
+        "name": "multivendor-npm-group",
+        "online": true,
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true
+        },
+        "group": {
+          "memberNames": ["multivendor-npm-hosted", "npmjs-proxy"]
+        },
+        "cleanup": {
+          "policyNames": []
+        }
+      }
+    },
+    "raw": {
+      "hosted": {
+        "name": "multivendor-raw-hosted",
+        "online": true,
+        "storage": {
+          "blobStoreName": "default",
+          "strictContentTypeValidation": true,
+          "writePolicy": "allow_once"
+        },
+        "cleanup": {
+          "policyNames": []
+        }
+      }
+    }
+  },
+  "security": {
+    "anonymousAccess": false,
+    "realms": ["NexusAuthenticatingRealm", "NexusAuthorizingRealm", "DockerToken", "NpmToken"],
+    "privileges": [
+      {
+        "name": "multivendor-deploy-privilege",
+        "description": "Privilege to deploy artifacts",
+        "type": "application",
+        "properties": {
+          "domain": "deploy",
+          "actions": ["create", "read", "update", "delete"]
+        }
+      }
+    ],
+    "roles": [
+      {
+        "id": "multivendor-deploy-role",
+        "name": "multivendor-deploy",
+        "description": "Role for deployment team",
+        "privileges": ["multivendor-deploy-privilege"],
+        "roles": []
+      },
+      {
+        "id": "multivendor-read-role",
+        "name": "multivendor-read",
+        "description": "Role for reading artifacts",
+        "privileges": ["nx-repository-view-*-*-read"],
+        "roles": []
+      }
+    ],
+    "users": [
+      {
+        "userId": "jenkins",
+        "firstName": "Jenkins",
+        "lastName": "CI/CD",
+        "emailAddress": "jenkins@example.com",
+        "password": "${{ secrets.NEXUS_JENKINS_PASSWORD }}",
+        "status": "active",
+        "roles": ["multivendor-deploy-role"]
+      },
+      {
+        "userId": "github-actions",
+        "firstName": "GitHub",
+        "lastName": "Actions",
+        "emailAddress": "github-actions@example.com",
+        "password": "${{ secrets.NEXUS_GITHUB_PASSWORD }}",
+        "status": "active",
+        "roles": ["multivendor-deploy-role"]
+      }
+    ]
+  },
+  "routing": {
+    "rules": [
+      {
+        "name": "block-npm-vulnerable",
+        "description": "Block packages with known vulnerabilities",
+        "mode": "BLOCK",
+        "matchers": ["^/repository/npmjs-proxy/.*$"]
+      }
+    ]
+  },
+  "cleanup": {
+    "policies": [
+      {
+        "name": "multivendor-cleanup-policy",
+        "format": "*",
+        "mode": "delete",
+        "criteria": {
+          "lastDownloaded": 30,
+          "lastBlobUpdated": 90
+        }
+      }
+    ]
+  }
+}

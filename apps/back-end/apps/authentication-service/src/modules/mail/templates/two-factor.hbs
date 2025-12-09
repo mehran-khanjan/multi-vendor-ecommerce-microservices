@@ -1,0 +1,31 @@
+{{! src/modules/mail/templates/two-factor.hbs }}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Your Backup Codes</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
+    <h1 style="color: #2563eb;">Your Two-Factor Authentication Backup Codes</h1>
+
+    <p>Hi {{name}},</p>
+
+    <p>Here are your backup codes for two-factor authentication. Store these codes in a safe place - you can use each code once if you lose access to your authenticator app.</p>
+
+    <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
+      <ul style="list-style: none; padding: 0; margin: 0; font-family: monospace; font-size: 16px;">
+        {{#each backupCodes}}
+        <li style="padding: 5px 0;">{{this}}</li>
+        {{/each}}
+      </ul>
+    </div>
+
+    <p style="color: #dc2626; font-weight: bold;">
+      ⚠️ Important: Each code can only be used once. Keep these codes secure and do not share them with anyone.
+    </p>
+
+    <p>Best regards,<br>The Multi Vendor App Team</p>
+  </div>
+</body>
+</html>

@@ -1,0 +1,41 @@
+module.exports = {
+    moduleFileExtensions: ['js', 'json', 'ts'],
+    rootDir: '.',
+    testEnvironment: 'node',
+    testRegex: '.*\\.spec\\.ts$',
+    transform: {
+        '^.+\\.(t|j)s$': 'ts-jest',
+    },
+    collectCoverageFrom: [
+        'src/**/*.(t|j)s',
+        '!src/main.ts',
+        '!src/**/*.module.ts',
+        '!src/**/index.ts',
+        '!src/**/*.entity.ts',
+        '!src/**/*.dto.ts',
+        '!src/**/*.interface.ts',
+        '!src/**/seeds/**',
+        '!src/**/migrations/**',
+    ],
+    coverageDirectory: '../coverage/api-gateway',
+    coverageThreshold: {
+        global: {
+            branches: 90,
+            functions: 90,
+            lines: 90,
+            statements: 90,
+        },
+    },
+    moduleNameMapper: {
+        '^@common/(.*)$': '<rootDir>/src/common/$1',
+        '^@config/(.*)$': '<rootDir>/src/config/$1',
+        '^@federation/(.*)$': '<rootDir>/src/modules/federation/$1',
+        '^@auth/(.*)$': '<rootDir>/src/modules/auth/$1',
+        '^@health/(.*)$': '<rootDir>/src/modules/health/$1',
+        '^@rate-limiting/(.*)$': '<rootDir>/src/modules/rate-limiting/$1',
+        '^@caching/(.*)$': '<rootDir>/src/modules/caching/$1',
+        '^@metrics/(.*)$': '<rootDir>/src/modules/metrics/$1',
+    },
+    setupFilesAfterEnv: ['<rootDir>/test/jest.setup.ts'],
+    testTimeout: 30000,
+};

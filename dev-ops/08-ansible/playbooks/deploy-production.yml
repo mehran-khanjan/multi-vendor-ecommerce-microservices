@@ -1,0 +1,170 @@
+---
+- name: Deploy MultiVendor Platform to Production
+  hosts: production_servers
+  become: yes
+  vars:
+    service_name: "{{ service | default('all') }}"
+    docker_image: "{{ docker_registry }}/multivendor/{{ service_name }}:{{ version }}"
+    deploy_user: multivendor
+    app_dir: "/opt/multivendor/production"
+
+  tasks:
+    - name: Check if deployment user exists
+      user:
+        name: "{{ deploy_user }}"
+        state: present
+        groups: docker
+        shell: /bin/bash
+        createhome: yes
+
+    - name: Create SSH key for deployment user
+      openssh_keypair:
+        path: "/home/{{ deploy_user }}/.ssh/id_rsa"
+        type: rsa
+        size: 4096
+        state: present
+
+    - name: Create application directory
+      file:
+        path: "{{ app_dir }}"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: docker
+        mode: '0755'
+
+    - name: Copy Kubernetes manifests
+      copy:
+        src: "../../k8s/"
+        dest: "{{ app_dir }}/k8s"
+        owner: "{{ deploy_user }}"
+        group: docker
+
+    - name: Create kubeconfig directory
+      file:
+        path: "/home/{{ deploy_user }}/.kube"
+        state: directory
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: '0700'
+
+    - name: Copy kubeconfig
+      copy:
+        src: "../../k8s/kubeconfig"
+        dest: "/home/{{ deploy_user }}/.kube/config"
+        owner: "{{ deploy_user }}"
+        group: "{{ deploy_user }}"
+        mode: '0600'
+
+    - name: Login to Docker registry
+      docker_login:
+        registry: "{{ docker_registry.split('/')[0] }}"
+        username: "{{ registry_username }}"
+        password: "{{ registry_password }}"
+
+    - name: Pull Docker image
+      docker_image:
+        name: "{{ docker_image }}"
+        source: pull
+        force_source: yes
+
+    - name: Tag Docker image for production
+      docker_image:
+        name: "{{ docker_image }}"
+        repository: "{{ docker_registry }}/multivendor/{{ service_name }}:production"
+        tag: production
+        force_tag: yes
+      when: "'production' not in docker_image"
+
+    - name: Push production tag
+      docker_image:
+        name: "{{ docker_registry }}/multivendor/{{ service_name }}:production"
+        push: yes
+        source: local
+
+    - name: Update Kubernetes deployment
+      kubernetes.core.k8s:
+        state: present
+        src: "{{ app_dir }}/k8s/services/{{ service_name }}-deployment.yaml"
+        namespace: multivendor-platform
+      environment:
+        K8S_AUTH_KUBECONFIG: "/home/{{ deploy_user }}/.kube/config"
+
+    - name: Wait for rollout to complete
+      kubernetes.core.k8s_info:
+        kind: Deployment
+        name: "{{ service_name }}"
+        namespace: multivendor-platform
+        wait: yes
+        wait_timeout: 300
+        wait_condition:
+          type: Available
+          status: "True"
+      environment:
+        K8S_AUTH_KUBECONFIG: "/home/{{ deploy_user }}/.kube/config"
+
+    - name: Run smoke tests
+      uri:
+        url: "https://api.multivendor.example.com/health"
+        method: GET
+        status_code: 200
+        headers:
+          User-Agent: "Ansible-Smoke-Test"
+        timeout: 30
+      register: smoke_test
+      until: smoke_test.status == 200
+      retries: 10
+      delay: 10
+
+    - name: Scale up previous version (for rollback)
+      kubernetes.core.k8s_scale:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ service_name }}-previous"
+        namespace: multivendor-platform
+        replicas: 1
+      environment:
+        K8S_AUTH_KUBECONFIG: "/home/{{ deploy_user }}/.kube/config"
+      when: service_name + '-previous' in k8s_deployments.stdout
+
+    - name: Update deployment history
+      lineinfile:
+        path: "{{ app_dir }}/deployment-history.log"
+        line: "{{ ansible_date_time.iso8601 }} - {{ service_name }} deployed version {{ version }}"
+        create: yes
+        owner: "{{ deploy_user }}"
+        group: docker
+
+    - name: Send deployment notification
+      uri:
+        url: "https://hooks.slack.com/services/{{ slack_webhook }}"
+        method: POST
+        body_format: json
+        body:
+          text: "✅ {{ service_name }} v{{ version }} deployed to production successfully"
+          username: "Deployment Bot"
+          icon_emoji: ":rocket:"
+        status_code: 200
+
+  handlers:
+    - name: Rollback deployment
+      kubernetes.core.k8s_scale:
+        api_version: apps/v1
+        kind: Deployment
+        name: "{{ service_name }}"
+        namespace: multivendor-platform
+        replicas: 0
+      environment:
+        K8S_AUTH_KUBECONFIG: "/home/{{ deploy_user }}/.kube/config"
+      when: deployment_failed
+
+    - name: Notify rollback
+      uri:
+        url: "https://hooks.slack.com/services/{{ slack_webhook }}"
+        method: POST
+        body_format: json
+        body:
+          text: "❌ {{ service_name }} deployment failed. Rolled back to previous version."
+          username: "Deployment Bot"
+          icon_emoji: ":warning:"
+        status_code: 200
+      when: deployment_failed

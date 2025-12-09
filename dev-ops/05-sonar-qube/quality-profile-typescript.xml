@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<profile>
+    <name>MultiVendor TypeScript</name>
+    <language>ts</language>
+    <rules>
+        <!-- Security Rules -->
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S2068</key>
+            <priority>CRITICAL</priority>
+        </rule>
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S4817</key>
+            <priority>CRITICAL</priority>
+        </rule>
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S5852</key>
+            <priority>CRITICAL</priority>
+        </rule>
+
+        <!-- Bug Detection -->
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S1481</key>
+            <priority>MAJOR</priority>
+        </rule>
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S3923</key>
+            <priority>MAJOR</priority>
+        </rule>
+
+        <!-- Code Smell -->
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S125</key>
+            <priority>MINOR</priority>
+        </rule>
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S1135</key>
+            <priority>INFO</priority>
+        </rule>
+
+        <!-- Vulnerability -->
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S1313</key>
+            <priority>CRITICAL</priority>
+        </rule>
+        <rule>
+            <repositoryKey>typescript</repositoryKey>
+            <key>S2245</key>
+            <priority>CRITICAL</priority>
+        </rule>
+    </rules>
+</profile>

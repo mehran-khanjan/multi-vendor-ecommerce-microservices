@@ -1,0 +1,217 @@
+name: MultiVendor Platform CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+      - 'feature/**'
+      - 'hotfix/**'
+  pull_request:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  SERVICE_NAME: ${{ matrix.service }}
+
+jobs:
+  # Job 1: Determine changed services
+  determine-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.changes.outputs.services }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Determine changed services
+        id: changes
+        run: |
+          echo "Getting changed files..."
+          git diff --name-only HEAD^ HEAD > changed_files.txt
+          
+          SERVICES=""
+          if grep -q "^api-gateway-service/" changed_files.txt; then
+            SERVICES="$SERVICES api-gateway"
+          fi
+          if grep -q "^authentication-service/" changed_files.txt; then
+            SERVICES="$SERVICES auth-service"
+          fi
+          
+          if [ -z "$SERVICES" ]; then
+            SERVICES="none"
+          fi
+          
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          cat changed_files.txt
+
+  # Job 2: Run for each changed service
+  service-pipeline:
+    needs: determine-changes
+    if: needs.determine-changes.outputs.services != 'none'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: ${{ fromJson(needs.determine-changes.outputs.services) }}
+      max-parallel: 2
+    env:
+      SERVICE_DIR: ${{ matrix.service }}-service
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'yarn'
+          cache-dependency-path: ${{ env.SERVICE_DIR }}/yarn.lock
+
+      - name: Install dependencies
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: yarn install --frozen-lockfile
+
+      - name: Lint code
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: yarn lint
+
+      - name: Run unit tests
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: yarn test:unit --coverage
+
+      - name: Run integration tests
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: yarn test:integration
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          directory: ${{ env.SERVICE_DIR }}/coverage
+          flags: unittests
+          name: ${{ matrix.service }}-coverage
+
+      - name: Build Docker image
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: |
+          docker build -t ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }} .
+
+      - name: Log into container registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v2
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push Docker image
+        if: github.event_name != 'pull_request'
+        working-directory: ${{ env.SERVICE_DIR }}
+        run: |
+          docker push ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          docker tag ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }} \
+                     ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:latest
+          docker push ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:latest
+
+      - name: Trigger Jenkins pipeline
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          JENKINS_URL="https://jenkins.example.com"
+          JENKINS_JOB="multivendor-${{ matrix.service }}-deploy"
+          JENKINS_TOKEN="${{ secrets.JENKINS_TOKEN }}"
+          
+          curl -X POST "$JENKINS_URL/job/$JENKINS_JOB/buildWithParameters" \
+            --user "github:$JENKINS_TOKEN" \
+            --data "SERVICE=${{ matrix.service }}" \
+            --data "VERSION=${{ github.sha }}" \
+            --data "ENVIRONMENT=staging" \
+            --data "GIT_COMMIT=${{ github.sha }}" \
+            --data "GIT_BRANCH=${{ github.ref }}"
+
+      - name: Deploy to staging
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        uses: azure/k8s-deploy@v4
+        with:
+          namespace: 'multivendor-staging'
+          manifests: |
+            ${{ env.SERVICE_DIR }}/k8s/
+          images: |
+            ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.service }}:${{ github.sha }}
+          kubectl-version: 'latest'
+
+  # Job 3: Security scanning
+  security-scan:
+    needs: determine-changes
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run Snyk to check for vulnerabilities
+        uses: snyk/actions/node@master
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --all-projects --severity-threshold=high
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+      - name: Check for secrets in code
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+
+  # Job 4: Performance testing
+  performance-test:
+    needs: [determine-changes, service-pipeline]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run k6 performance tests
+        uses: grafana/k6-action@v0.3.0
+        with:
+          filename: ./performance-tests/${{ matrix.service }}-test.js
+        env:
+          K6_CLOUD_TOKEN: ${{ secrets.K6_CLOUD_TOKEN }}
+          BASE_URL: ${{ secrets.STAGING_URL }}
+
+  # Job 5: Notify team
+  notify:
+    needs: [service-pipeline, security-scan]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          author_name: GitHub Actions
+          fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()

@@ -1,0 +1,89 @@
+name: PR Validation
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate-pr:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Get changed services
+        id: changed-services
+        run: |
+          echo "Getting changed files in PR..."
+          git diff --name-only origin/${{ github.base_ref }}...HEAD > pr_changes.txt
+          
+          SERVICES=""
+          if grep -q "^api-gateway-service/" pr_changes.txt; then
+            SERVICES="$SERVICES api-gateway"
+          fi
+          if grep -q "^authentication-service/" pr_changes.txt; then
+            SERVICES="$SERVICES auth-service"
+          fi
+          
+          echo "services=$SERVICES" >> $GITHUB_OUTPUT
+          cat pr_changes.txt
+
+      - name: Validate PR title
+        uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            chore
+            docs
+            style
+            refactor
+            perf
+            test
+
+      - name: Check for breaking changes
+        if: steps.changed-services.outputs.services != ''
+        run: |
+          echo "Checking for breaking changes in: ${{ steps.changed-services.outputs.services }}"
+          # Add your breaking change detection logic here
+
+      - name: Run service-specific checks
+        if: steps.changed-services.outputs.services != ''
+        run: |
+          for service in ${{ steps.changed-services.outputs.services }}; do
+            echo "Running checks for $service"
+            # Add service-specific validation
+          done
+
+      - name: Comment PR with validation results
+        uses: actions/github-script@v6
+        if: always()
+        with:
+          script: |
+            const services = '${{ steps.changed-services.outputs.services }}'.trim();
+            const results = {
+              title: '✅ PR title follows semantic versioning',
+              services: services ? `✅ Changes detected in: ${services}` : '⚠️ No service changes detected',
+              status: '${{ job.status }}'
+            };
+            
+            const comment = `
+            ## PR Validation Results
+            
+            - ${results.title}
+            - ${results.services}
+            - Overall Status: **${results.status}**
+            
+            _Validation completed at ${new Date().toISOString()}_
+            `;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

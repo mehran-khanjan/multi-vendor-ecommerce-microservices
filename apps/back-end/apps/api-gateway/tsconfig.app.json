@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "./",
+    "paths": {
+      "@common/*": ["src/common/*"],
+      "@common": ["src/common"],
+      "@config/*": ["src/config/*"],
+      "@config": ["src/config"],
+      "@federation/*": ["src/modules/federation/*"],
+      "@federation": ["src/modules/federation"],
+      "@metrics/*": ["src/modules/metrics/*"],
+      "@metrics": ["src/modules/metrics"]
+    },
+    "declaration": false,
+    "outDir": "../../dist/apps/api-gateway",
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+}

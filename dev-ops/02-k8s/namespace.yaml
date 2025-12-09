@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: multivendor-platform
+  labels:
+    name: multivendor-platform
+    environment: production
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: multivendor-staging
+  labels:
+    name: multivendor-staging
+    environment: staging
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: multivendor-canary
+  labels:
+    name: multivendor-canary
+    environment: canary

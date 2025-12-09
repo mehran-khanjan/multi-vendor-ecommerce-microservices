@@ -1,0 +1,526 @@
+pipeline {
+    agent any
+
+    parameters {
+        choice(
+            name: 'SERVICE',
+            choices: ['api-gateway', 'auth-service', 'all'],
+            description: 'Select service to build and deploy'
+        )
+        choice(
+            name: 'ENVIRONMENT',
+            choices: ['test', 'staging', 'canary', 'production'],
+            description: 'Select target environment'
+        )
+        string(
+            name: 'VERSION',
+            defaultValue: '${BUILD_NUMBER}',
+            description: 'Version number for the build'
+        )
+        booleanParam(
+            name: 'RUN_TESTS',
+            defaultValue: true,
+            description: 'Run automated tests'
+        )
+        booleanParam(
+            name: 'SKIP_DEPLOY',
+            defaultValue: false,
+            description: 'Skip deployment phase'
+        )
+    }
+
+    environment {
+        // Nexus Repository Configuration
+        NEXUS_URL = 'https://nexus.example.com'
+        NEXUS_CREDENTIALS = credentials('nexus-credentials')
+
+        // Docker Registry Configuration
+        DOCKER_REGISTRY = 'registry.example.com'
+        DOCKER_CREDENTIALS = credentials('docker-registry-credentials')
+
+        // Kubernetes Configuration
+        KUBECONFIG = credentials('kubeconfig')
+
+        // Terraform Configuration
+        TF_VAR_environment = "${ENVIRONMENT}"
+        TF_VAR_build_number = "${BUILD_NUMBER}"
+        TF_VAR_service = "${SERVICE}"
+
+        // Ansible Configuration
+        ANSIBLE_INVENTORY = "inventories/${ENVIRONMENT}"
+
+        // SonarQube Configuration
+        SONAR_HOST_URL = 'https://sonar.example.com'
+        SONAR_TOKEN = credentials('sonar-token')
+
+        // Git Configuration
+        GIT_BRANCH = sh(script: 'git rev-parse --abbrev-ref HEAD', returnStdout: true).trim()
+        GIT_COMMIT = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+
+        // Build Configuration
+        BUILD_TIMESTAMP = sh(script: 'date -u +"%Y-%m-%dT%H:%M:%SZ"', returnStdout: true).trim()
+    }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+        timeout(time: 2, unit: 'HOURS')
+        disableConcurrentBuilds()
+        checkoutToSubdirectory('src')
+    }
+
+    stages {
+        // Stage 1: Infrastructure Setup for Testing
+        stage('Infrastructure: Test Environment') {
+            when {
+                expression { params.RUN_TESTS == true }
+            }
+            steps {
+                script {
+                    echo "Setting up test infrastructure for ${params.SERVICE}"
+
+                    dir('infrastructure') {
+                        // Initialize Terraform
+                        sh '''
+                            terraform init -backend-config="backend/${ENVIRONMENT}.tfbackend"
+                        '''
+
+                        // Plan infrastructure changes
+                        sh '''
+                            terraform plan \
+                                -var="environment=${ENVIRONMENT}" \
+                                -var="purpose=test" \
+                                -var="service=${SERVICE}" \
+                                -out=tfplan
+                        '''
+
+                        // Apply infrastructure changes
+                        sh '''
+                            terraform apply -auto-approve tfplan
+                        '''
+
+                        // Extract outputs for Ansible
+                        sh '''
+                            terraform output -json > terraform_outputs.json
+                        '''
+                    }
+
+                    // Run Ansible to configure test servers
+                    dir('ansible') {
+                        sh '''
+                            ansible-playbook \
+                                -i ${ANSIBLE_INVENTORY} \
+                                -e "@../infrastructure/terraform_outputs.json" \
+                                playbooks/setup-test-environment.yml
+                        '''
+                    }
+                }
+            }
+        }
+
+        // Stage 2: Code Quality & Security Scanning
+        stage('Code Quality') {
+            steps {
+                script {
+                    echo "Running code quality checks for ${params.SERVICE}"
+
+                    dir("src/${params.SERVICE}") {
+                        // Install dependencies
+                        sh 'yarn install --frozen-lockfile'
+
+                        // Run linting
+                        sh 'yarn lint'
+
+                        // Run security audit
+                        sh 'yarn audit --level=high'
+
+                        // Run SonarQube analysis
+                        withSonarQubeEnv('sonar-server') {
+                            sh """
+                                sonar-scanner \
+                                    -Dsonar.projectKey=${params.SERVICE} \
+                                    -Dsonar.projectName="${params.SERVICE}" \
+                                    -Dsonar.projectVersion=${VERSION} \
+                                    -Dsonar.sources=. \
+                                    -Dsonar.exclusions=node_modules/**,dist/**,coverage/** \
+                                    -Dsonar.tests=. \
+                                    -Dsonar.test.inclusions=test/**,**/*.spec.ts \
+                                    -Dsonar.typescript.lcov.reportPaths=coverage/lcov.info \
+                                    -Dsonar.qualitygate.wait=true
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage 3: Unit & Integration Tests
+        stage('Run Tests') {
+            when {
+                expression { params.RUN_TESTS == true }
+            }
+            steps {
+                script {
+                    echo "Running tests for ${params.SERVICE}"
+
+                    dir("src/${params.SERVICE}") {
+                        // Run unit tests with coverage
+                        sh '''
+                            yarn test:unit --coverage --coverageDirectory=coverage/unit
+                        '''
+
+                        // Run integration tests
+                        sh '''
+                            yarn test:integration --coverage --coverageDirectory=coverage/integration
+                        '''
+
+                        // Generate combined coverage report
+                        sh '''
+                            npx nyc merge coverage/unit coverage/integration coverage/combined
+                            npx nyc report --reporter=lcov --report-dir=coverage
+                        '''
+
+                        // Archive test results
+                        junit '**/test-results/*.xml'
+
+                        // Archive coverage reports
+                        publishHTML([
+                            reportDir: 'coverage',
+                            reportFiles: 'index.html',
+                            reportName: 'Coverage Report',
+                            keepAll: true
+                        ])
+                    }
+                }
+            }
+        }
+
+        // Stage 4: Build Artifacts
+        stage('Build') {
+            steps {
+                script {
+                    echo "Building ${params.SERVICE} version ${VERSION}"
+
+                    dir("src/${params.SERVICE}") {
+                        // Build the application
+                        sh 'yarn build'
+
+                        // Create Docker image
+                        sh """
+                            docker build \
+                                -t ${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${VERSION} \
+                                -t ${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${GIT_COMMIT} \
+                                -t ${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:latest \
+                                .
+                        '''
+
+                        // Push Docker image to registry
+                        withCredentials([usernamePassword(
+                            credentialsId: 'docker-registry-credentials',
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASSWORD'
+                        )]) {
+                            sh '''
+                                docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD} ${DOCKER_REGISTRY}
+                                docker push ${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${VERSION}
+                                docker push ${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${GIT_COMMIT}
+                                docker push ${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:latest
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage 5: Store Artifacts in Nexus
+        stage('Store Artifacts') {
+            steps {
+                script {
+                    echo "Storing artifacts in Nexus for ${params.SERVICE}"
+
+                    dir("src/${params.SERVICE}") {
+                        // Package the built application
+                        sh '''
+                            tar -czf ${params.SERVICE}-${VERSION}.tar.gz \
+                                --exclude=node_modules \
+                                --exclude=.git \
+                                --exclude=coverage \
+                                .
+                        '''
+
+                        // Upload to Nexus
+                        withCredentials([usernamePassword(
+                            credentialsId: 'nexus-credentials',
+                            usernameVariable: 'NEXUS_USER',
+                            passwordVariable: 'NEXUS_PASSWORD'
+                        )]) {
+                            sh '''
+                                curl -v -u ${NEXUS_USER}:${NEXUS_PASSWORD} \
+                                    --upload-file ${params.SERVICE}-${VERSION}.tar.gz \
+                                    ${NEXUS_URL}/repository/multivendor-raw/${params.SERVICE}/${VERSION}/${params.SERVICE}-${VERSION}.tar.gz
+                            '''
+                        }
+
+                        // Store build information
+                        writeJSON file: 'build-info.json', json: [
+                            service: params.SERVICE,
+                            version: VERSION,
+                            git_commit: GIT_COMMIT,
+                            git_branch: GIT_BRANCH,
+                            build_timestamp: BUILD_TIMESTAMP,
+                            environment: params.ENVIRONMENT,
+                            docker_image: "${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${VERSION}"
+                        ]
+
+                        // Upload build info to Nexus
+                        withCredentials([usernamePassword(
+                            credentialsId: 'nexus-credentials',
+                            usernameVariable: 'NEXUS_USER',
+                            passwordVariable: 'NEXUS_PASSWORD'
+                        )]) {
+                            sh '''
+                                curl -v -u ${NEXUS_USER}:${NEXUS_PASSWORD} \
+                                    --upload-file build-info.json \
+                                    ${NEXUS_URL}/repository/multivendor-raw/${params.SERVICE}/${VERSION}/build-info.json
+                            '''
+                        }
+                    }
+                }
+            }
+        }
+
+        // Stage 6: Canary Deployment for QA
+        stage('Canary Deployment') {
+            when {
+                expression { params.ENVIRONMENT == 'canary' && params.SKIP_DEPLOY == false }
+            }
+            steps {
+                script {
+                    echo "Deploying ${params.SERVICE} to canary environment"
+
+                    dir('infrastructure') {
+                        // Initialize Terraform for canary
+                        sh '''
+                            terraform init -backend-config="backend/canary.tfbackend"
+                        '''
+
+                        // Plan canary infrastructure
+                        sh '''
+                            terraform plan \
+                                -var="environment=canary" \
+                                -var="purpose=qa-testing" \
+                                -var="service=${SERVICE}" \
+                                -var="docker_image=${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${VERSION}" \
+                                -out=tfplan-canary
+                        '''
+
+                        // Apply canary infrastructure
+                        sh '''
+                            terraform apply -auto-approve tfplan-canary
+                        '''
+                    }
+
+                    // Configure canary servers with Ansible
+                    dir('ansible') {
+                        sh '''
+                            ansible-playbook \
+                                -i inventories/canary \
+                                -e "docker_image=${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${VERSION}" \
+                                playbooks/deploy-canary.yml
+                        '''
+                    }
+
+                    // Run smoke tests on canary deployment
+                    dir("src/${params.SERVICE}") {
+                        sh '''
+                            yarn test:e2e --url=https://canary.api.multivendor.example.com
+                        '''
+                    }
+                }
+            }
+        }
+
+        // Stage 7: Production Deployment
+        stage('Production Deployment') {
+            when {
+                expression { params.ENVIRONMENT == 'production' && params.SKIP_DEPLOY == false }
+            }
+            steps {
+                script {
+                    echo "Deploying ${params.SERVICE} to production environment"
+
+                    input message: "Deploy ${params.SERVICE} v${VERSION} to production?", ok: 'Deploy'
+
+                    dir('infrastructure') {
+                        // Initialize Terraform for production
+                        sh '''
+                            terraform init -backend-config="backend/production.tfbackend"
+                        '''
+
+                        // Plan production infrastructure
+                        sh '''
+                            terraform plan \
+                                -var="environment=production" \
+                                -var="purpose=production" \
+                                -var="service=${SERVICE}" \
+                                -var="docker_image=${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${VERSION}" \
+                                -out=tfplan-production
+                        '''
+
+                        // Apply production infrastructure
+                        sh '''
+                            terraform apply -auto-approve tfplan-production
+                        '''
+                    }
+
+                    // Configure production servers with Ansible
+                    dir('ansible') {
+                        sh '''
+                            ansible-playbook \
+                                -i inventories/production \
+                                -e "docker_image=${DOCKER_REGISTRY}/multivendor/${params.SERVICE}:${VERSION}" \
+                                playbooks/deploy-production.yml
+                        '''
+                    }
+
+                    // Verify production deployment
+                    dir("src/${params.SERVICE}") {
+                        sh '''
+                            yarn test:smoke --url=https://api.multivendor.example.com
+                        '''
+                    }
+
+                    // Send deployment notification
+                    emailext(
+                        subject: "PRODUCTION DEPLOYMENT: ${params.SERVICE} v${VERSION}",
+                        body: """
+                            Service: ${params.SERVICE}
+                            Version: ${VERSION}
+                            Git Commit: ${GIT_COMMIT}
+                            Environment: ${params.ENVIRONMENT}
+                            Build: ${BUILD_URL}
+                            Deployment Time: ${BUILD_TIMESTAMP}
+
+                            Deployment completed successfully.
+                        """,
+                        to: 'devops@example.com',
+                        replyTo: 'devops@example.com'
+                    )
+                }
+            }
+        }
+
+        // Stage 8: Cleanup & Artifact Management
+        stage('Cleanup') {
+            steps {
+                script {
+                    echo "Cleaning up resources and managing artifacts"
+
+                    // Clean up old Docker images
+                    sh '''
+                        docker image prune -f --filter "until=24h"
+                    '''
+
+                    // Archive build artifacts
+                    archiveArtifacts artifacts: "src/${params.SERVICE}/**/*.tar.gz, src/${params.SERVICE}/build-info.json"
+
+                    // Update deployment history
+                    dir('deployments') {
+                        writeJSON file: "deployment-${BUILD_NUMBER}.json", json: [
+                            build_number: BUILD_NUMBER,
+                            service: params.SERVICE,
+                            version: VERSION,
+                            environment: params.ENVIRONMENT,
+                            deployed_at: BUILD_TIMESTAMP,
+                            status: 'success',
+                            commit: GIT_COMMIT,
+                            branch: GIT_BRANCH
+                        ]
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            // Clean workspace
+            cleanWs()
+
+            // Send build status notification
+            script {
+                def status = currentBuild.currentResult
+                def subject = "${status}: ${params.SERVICE} #${BUILD_NUMBER}"
+
+                emailext(
+                    subject: subject,
+                    body: """
+                        Build: ${JOB_NAME} #${BUILD_NUMBER}
+                        Status: ${status}
+                        Service: ${params.SERVICE}
+                        Version: ${VERSION}
+                        Environment: ${params.ENVIRONMENT}
+                        Duration: ${currentBuild.durationString}
+                        Build URL: ${BUILD_URL}
+                    """,
+                    to: 'devops@example.com',
+                    replyTo: 'devops@example.com'
+                )
+            }
+        }
+
+        success {
+            echo "Pipeline completed successfully!"
+
+            // Update deployment dashboard
+            script {
+                sh '''
+                    curl -X POST https://dashboard.example.com/api/deployments \
+                        -H "Content-Type: application/json" \
+                        -d '{"service": "${params.SERVICE}", "version": "${VERSION}", "environment": "${params.ENVIRONMENT}", "status": "success"}'
+                '''
+            }
+        }
+
+        failure {
+            echo "Pipeline failed!"
+
+            // Send failure alert
+            emailext(
+                subject: "FAILURE: ${params.SERVICE} #${BUILD_NUMBER}",
+                body: """
+                    Build: ${JOB_NAME} #${BUILD_NUMBER}
+                    Status: FAILED
+                    Service: ${params.SERVICE}
+                    Version: ${VERSION}
+                    Environment: ${params.ENVIRONMENT}
+                    Build URL: ${BUILD_URL}
+
+                    Please investigate immediately.
+                """,
+                to: 'devops-alerts@example.com',
+                replyTo: 'devops@example.com'
+            )
+
+            // Trigger rollback if deployment failed
+            script {
+                if (params.ENVIRONMENT == 'production') {
+                    echo "Initiating rollback for production deployment"
+                    build job: 'rollback-deployment',
+                        parameters: [
+                            string(name: 'SERVICE', value: params.SERVICE),
+                            string(name: 'VERSION', value: VERSION)
+                        ],
+                        wait: false
+                }
+            }
+        }
+
+        unstable {
+            echo "Pipeline completed with unstable status (tests failed)"
+        }
+
+        changed {
+            echo "Pipeline status changed"
+        }
+    }
+}
