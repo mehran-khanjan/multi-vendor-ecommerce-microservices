@@ -1,0 +1,81 @@
+// proto/auth.proto
+syntax = "proto3";
+
+package auth;
+
+service AuthService {
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+  rpc GetUserAddress(GetUserAddressRequest) returns (GetUserAddressResponse);
+  rpc GetUserAddresses(GetUserAddressesRequest) returns (GetUserAddressesResponse);
+  rpc GetUserById(GetUserByIdRequest) returns (UserResponse);
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  bool valid = 1;
+  UserData user = 2;
+  string error = 3;
+}
+
+message UserData {
+  string id = 1;
+  string email = 2;
+  string role = 3;
+  string vendor_id = 4;
+  repeated Permission permissions = 5;
+}
+
+message Permission {
+  string action = 1;
+  string subject = 2;
+  string conditions = 3;
+}
+
+message GetUserAddressRequest {
+  string user_id = 1;
+  string address_id = 2;
+}
+
+message GetUserAddressesRequest {
+  string user_id = 1;
+}
+
+message GetUserAddressResponse {
+  bool success = 1;
+  Address address = 2;
+  string error = 3;
+}
+
+message GetUserAddressesResponse {
+  bool success = 1;
+  repeated Address addresses = 2;
+  string error = 3;
+}
+
+message Address {
+  string id = 1;
+  string user_id = 2;
+  string label = 3;
+  string full_name = 4;
+  string phone = 5;
+  string address_line1 = 6;
+  string address_line2 = 7;
+  string city = 8;
+  string state = 9;
+  string postal_code = 10;
+  string country = 11;
+  bool is_default = 12;
+}
+
+message GetUserByIdRequest {
+  string user_id = 1;
+}
+
+message UserResponse {
+  bool success = 1;
+  UserData user = 2;
+  string error = 3;
+}

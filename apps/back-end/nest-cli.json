@@ -28,6 +28,33 @@
         "tsConfigPath": "apps/authentication-service/tsconfig.app.json"
       }
     },
+    "notifications-service": {
+      "type": "application",
+      "root": "apps/notifications-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/notifications-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/notifications-service/tsconfig.app.json"
+      }
+    },
+    "orders-service": {
+      "type": "application",
+      "root": "apps/orders-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/orders-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/orders-service/tsconfig.app.json"
+      }
+    },
+    "products-service": {
+      "type": "application",
+      "root": "apps/products-service",
+      "entryFile": "main",
+      "sourceRoot": "apps/products-service/src",
+      "compilerOptions": {
+        "tsConfigPath": "apps/products-service/tsconfig.app.json"
+      }
+    },
     "root-service": {
       "type": "application",
       "root": "apps/root-service",

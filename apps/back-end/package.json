@@ -19,7 +19,7 @@
     "test:cov": "jest --coverage --config jest.config.js",
     "test:unit": "jest --testPathPattern=\\.spec\\.ts$ --config jest.config.js",
     "test:integration": "jest --testPathPattern=\\.integration\\.spec\\.ts$ --config jest.config.js",
-    "test:e2e": "jest --testPathPattern=\\.e2e-spec\\.ts$ --config jest.config.js",
+    "test:e2e": "jest --apps/root-service/testPathPattern=\\.e2e-spec\\.ts$ --config jest.config.js",
     "test:contract": "jest --testPathPattern=contract --config jest.config.js",
     "test:performance": "jest --testPathPattern=performance --config jest.config.js --testTimeout=120000",
     "test:ci": "npm run test:cov && npm run test:integration && npm run test:e2e"

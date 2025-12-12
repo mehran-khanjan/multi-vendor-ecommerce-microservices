@@ -1,0 +1,37 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: products-service-config
+  namespace: multivendor-platform
+data:
+  NODE_ENV: production
+  DB_HOST: postgres-primary.multivendor-platform.svc.cluster.local
+  DB_PORT: "5432"
+  DB_DATABASE: products_service_production
+  REDIS_HOST: redis-master.multivendor-platform.svc.cluster.local
+  REDIS_PORT: "6379"
+  JWT_ACCESS_EXPIRATION: "15m"
+  JWT_REFRESH_EXPIRATION: "7d"
+  MAX_LOGIN_ATTEMPTS: "5"
+  LOCKOUT_DURATION: "15"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  CORS_ORIGINS: "https://customer.example.com,https://vendor.example.com,https://admin.example.com"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: api-gateway-config
+  namespace: multivendor-platform
+data:
+  NODE_ENV: production
+  REDIS_HOST: redis-master.multivendor-platform.svc.cluster.local
+  REDIS_PORT: "6379"
+  RATE_LIMIT_ENABLED: "true"
+  RATE_LIMIT_WINDOW_MS: "60000"
+  MAX_QUERY_COMPLEXITY: "500"
+  MAX_QUERY_DEPTH: "10"
+  LOG_LEVEL: "info"
+  LOG_FORMAT: "json"
+  HEALTH_SUBGRAPH_TIMEOUT: "5000"
+  METRICS_ENABLED: "true"

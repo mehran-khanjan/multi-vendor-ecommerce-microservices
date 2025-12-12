@@ -1,0 +1,4 @@
+// src/common/decorators/index.ts
+export * from './current-user.decorator';
+export * from './public.decorator';
+export * from './permissions.decorator';

@@ -1,0 +1,108 @@
+// proto/order.proto
+syntax = "proto3";
+
+package order;
+
+service OrderService {
+  rpc GetOrderById(GetOrderByIdRequest) returns (OrderResponse);
+  rpc GetOrdersByVendor(GetOrdersByVendorRequest) returns (OrdersResponse);
+  rpc UpdateOrderItemStatus(UpdateOrderItemStatusRequest) returns (OrderItemResponse);
+  rpc GetOrderStats(GetOrderStatsRequest) returns (OrderStatsResponse);
+}
+
+message GetOrderByIdRequest {
+  string order_id = 1;
+}
+
+message OrderResponse {
+  bool success = 1;
+  Order order = 2;
+  string error = 3;
+}
+
+message Order {
+  string id = 1;
+  string customer_id = 2;
+  string order_number = 3;
+  string status = 4;
+  string payment_status = 5;
+  double subtotal = 6;
+  double tax_amount = 7;
+  double shipping_amount = 8;
+  double discount_amount = 9;
+  double total_amount = 10;
+  string currency = 11;
+  ShippingAddress shipping_address = 12;
+  repeated OrderItem items = 13;
+  string created_at = 14;
+  string updated_at = 15;
+}
+
+message ShippingAddress {
+  string full_name = 1;
+  string phone = 2;
+  string address_line1 = 3;
+  string address_line2 = 4;
+  string city = 5;
+  string state = 6;
+  string postal_code = 7;
+  string country = 8;
+}
+
+message OrderItem {
+  string id = 1;
+  string order_id = 2;
+  string vendor_id = 3;
+  string product_id = 4;
+  string product_name = 5;
+  string variant_id = 6;
+  string variant_name = 7;
+  string vendor_product_id = 8;
+  string vendor_variant_id = 9;
+  int32 quantity = 10;
+  double unit_price = 11;
+  double total_price = 12;
+  string status = 13;
+}
+
+message GetOrdersByVendorRequest {
+  string vendor_id = 1;
+  string status = 2;
+  int32 page = 3;
+  int32 limit = 4;
+}
+
+message OrdersResponse {
+  bool success = 1;
+  repeated Order orders = 2;
+  int32 total_count = 3;
+  string error = 4;
+}
+
+message UpdateOrderItemStatusRequest {
+  string order_item_id = 1;
+  string status = 2;
+  string vendor_id = 3;
+}
+
+message OrderItemResponse {
+  bool success = 1;
+  OrderItem order_item = 2;
+  string error = 3;
+}
+
+message GetOrderStatsRequest {
+  string vendor_id = 1;
+  string start_date = 2;
+  string end_date = 3;
+}
+
+message OrderStatsResponse {
+  bool success = 1;
+  int32 total_orders = 2;
+  int32 pending_orders = 3;
+  int32 completed_orders = 4;
+  int32 cancelled_orders = 5;
+  double total_revenue = 6;
+  string error = 7;
+}

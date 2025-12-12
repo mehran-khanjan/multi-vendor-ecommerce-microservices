@@ -1,0 +1,45 @@
+// proto/auth.proto
+syntax = "proto3";
+
+package auth;
+
+service AuthService {
+  rpc ValidateToken(ValidateTokenRequest) returns (ValidateTokenResponse);
+  rpc GetUserById(GetUserByIdRequest) returns (UserResponse);
+}
+
+message ValidateTokenRequest {
+  string token = 1;
+}
+
+message ValidateTokenResponse {
+  bool valid = 1;
+  UserData user = 2;
+  string error = 3;
+}
+
+message UserData {
+  string id = 1;
+  string email = 2;
+  string role = 3;
+  string vendor_id = 4;
+  repeated Permission permissions = 5;
+  string first_name = 6;
+  string last_name = 7;
+}
+
+message Permission {
+  string action = 1;
+  string subject = 2;
+  string conditions = 3;
+}
+
+message GetUserByIdRequest {
+  string user_id = 1;
+}
+
+message UserResponse {
+  bool success = 1;
+  UserData user = 2;
+  string error = 3;
+}

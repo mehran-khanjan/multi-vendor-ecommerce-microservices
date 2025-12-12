@@ -336,6 +336,79 @@ role-based access control, and handle high-traffic loads with 99.9% uptime.
 - JWT token blacklisting
 - Regular security dependency updates
 
+### **4.5 Products Service Epic**
+
+#### **Story products-001**
+
+**User Story:** As an Admin, I want to create master product templates so that vendors can offer standardized products.
+- **Acceptance Criteria:**
+   - SKU generation with uniqueness validation
+   - Cost price visibility limited to admin roles
+   - Multi-variant support (size, color, material)
+   - Category tree hierarchy with materialized path
+   - Product lifecycle management (Draft → Pending → Active → Discontinued)
+
+#### **Story products-002**
+
+**User Story:** As a Vendor Owner, I want to create customized offerings from master products so that I can set my own prices and inventory.
+- **Acceptance Criteria:**
+   - Vendor price override with validation (≥ cost price)
+   - Vendor-specific SKU generation
+   - Stock tracking per vendor
+   - Handling time configuration
+   - Bulk import/export capability
+
+#### **Story products-003**
+
+**User Story:** As a Customer, I should not see wholesale pricing or inventory levels so that vendor business intelligence is protected.
+- **Acceptance Criteria:**
+   - Cost price hidden for non-admin roles
+   - SKU visibility limited to admins
+   - Stock quantities visible only to relevant vendors
+   - Dynamic field filtering based on JWT claims
+
+### **4.6 Orders Service Epic**
+
+#### **Story orders-001**
+
+**User Story:** As a Customer, I want to add products from multiple vendors to a single cart so that I can checkout once for all items.
+- **Acceptance Criteria:**
+   - Real-time stock validation on cart add
+   - Price consistency checks against current vendor pricing
+   - Vendor grouping for order splitting
+   - Cart expiration after 24 hours
+
+#### **Story orders-002**
+
+**User Story:** As a Customer, I want to securely checkout with multiple payment methods so that I can complete purchases conveniently.
+- **Acceptance Criteria:**
+   - Address validation via Auth Service gRPC
+   - Payment card tokenization
+   - Distributed transaction with 2-phase commit
+   - Stock reservation with TTL (15 minutes)
+   - Automatic cart conversion post-payment
+
+#### **Story orders-003**
+
+**User Story:** As a Vendor, I want to update order item status with tracking information so that customers can track shipments.
+- **Acceptance Criteria:**
+   - Per-item status updates (Pending → Confirmed → Shipped → Delivered)
+   - Tracking number validation with carrier APIs
+   - Automatic order status aggregation
+   - Cancellation with refund processing
+
+### **4.7 Notifications Service Epic**
+
+#### **Story notifications-001**
+
+**User Story:** As a Vendor, I want real-time notifications when orders arrive so that I can process them immediately.
+- **Acceptance Criteria:**
+   - <100ms notification delivery latency
+   - Per-vendor namespace isolation
+   - Connection state management across pods
+   - Graceful reconnection with state sync
+   - Rate limiting per connection (100 req/min)
+
 ---
 
 ## **5. Sprint Planning**
@@ -477,6 +550,102 @@ role-based access control, and handle high-traffic loads with 99.9% uptime.
 - Documentation complete
 
 ---
+
+### Sprint 6: Foundation & Core Models (Week 1-2)
+
+**Objective:** Establish service skeletons with database schemas
+
+- **Tasks:**
+   - ✅ Project structure with NestJS framework
+   - ✅ PostgreSQL schema migrations
+   - ✅ TypeORM entity definitions
+   - ✅ Base repository patterns
+   - ✅ Docker Compose local development
+
+**Deliverables:**
+- Three runnable services with health endpoints
+- Database schemas for all core entities
+- Basic CRUD operations via GraphQL
+
+### Sprint 7: Authentication & Authorization (Week 3)
+
+**Objective:** Implement comprehensive security layer
+
+- **Tasks:**
+   - ✅ JWT validation middleware
+   - ✅ CASL ability factories per role
+   - ✅ GraphQL field directives (@adminOnly, @vendorOnly)
+   - ✅ Permission guard implementations
+   - ✅ User context propagation
+
+**Deliverables:**
+- Role-based access control working end-to-end
+- Field-level security in GraphQL responses
+- Integration with Auth Service gRPC
+
+### Sprint 8: Product Service Completeness (Week 4)
+
+**Objective:** Full product catalog with vendor offerings
+
+- **Tasks:**
+   - ✅ Master product management (Admin only)
+   - ✅ Vendor product creation with pricing
+   - ✅ Inventory tracking per vendor
+   - ✅ Category tree with materialized path
+   - ✅ gRPC stock management endpoints
+
+**Deliverables:**
+- Complete product catalog API
+- Stock reservation system
+- Vendor dashboard capabilities
+
+### Sprint 9: Order Processing Engine (Week 5)
+
+**Objective:** Distributed order management
+
+- **Tasks:**
+   - ✅ Cart management with multi-vendor support
+   - ✅ Checkout process with payment integration
+   - ✅ Saga pattern for distributed transactions
+   - ✅ Order status workflows
+   - ✅ Refund processing logic
+
+**Deliverables:**
+- End-to-end order processing
+- Payment integration (Stripe)
+- Order history and tracking
+
+### Sprint 10: Real-time Notifications (Week 6)
+
+**Objective:** WebSocket-based communication system
+
+- **Tasks:**
+   - ✅ Socket.IO gateway per namespace
+   - ✅ Redis adapter for horizontal scaling
+   - ✅ RabbitMQ event consumers
+   - ✅ Notification persistence
+   - ✅ Connection state management
+
+**Deliverables:**
+- Real-time order notifications
+- Vendor dashboard updates
+- Customer order tracking
+
+### Sprint 11: Production Readiness (Week 7-8)
+
+**Objective:** Deployment and monitoring
+
+- **Tasks:**
+   - ✅ Kubernetes deployment manifests
+   - ✅ Helm charts for each service
+   - ✅ Monitoring dashboards (Grafana)
+   - ✅ Alert rules (Prometheus)
+   - ✅ Load testing and optimization
+
+**Deliverables:**
+- Production-ready deployments
+- Comprehensive monitoring
+- Performance benchmarks
 
 ## **7. Non-Functional Requirements**
 

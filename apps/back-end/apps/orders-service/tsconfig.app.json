@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "baseUrl": "./src",
+    "declaration": false,
+    "outDir": "../../dist/apps/new-orders-service",
+    "paths": {
+      "@common/*": ["common/*"],
+      "@config/*": ["config/*"],
+      "@database/*": ["database/*"],
+      "@grpc/*": ["grpc/*"],
+      "@modules/*": ["modules/*"]
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "test", "**/*spec.ts"]
+}
